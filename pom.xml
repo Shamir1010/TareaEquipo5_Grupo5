@@ -8,7 +8,7 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.release>21</maven.compiler.release>
-        <exec.mainClass>com.mycompany.te5_grupo5.TE5_Grupo5</exec.mainClass>
+        <exec.mainClass>com.campuseats.Main</exec.mainClass>
     </properties>
     <dependencies>
      <dependency>
