@@ -13,14 +13,15 @@ public class Main {
     public static void main(String[] args) {
         RepositorioAnalitica repo = new RepoAnaliticaEnMemoria();
 
-        // Strategy: cada metrica se inyecta; agregar una nueva no obliga a tocar el servicio.
-        ServicioAnalitica servicio = new ServicioAnalitica(repo,
-                List.of(new PlatosTop(), new PedidosPorHora(), new TicketPromedio(), new TiempoPreparacion()));
-
-        servicio.cargar();
-
         LocalDateTime desde = LocalDateTime.of(2026, 10, 19, 0, 0);
         LocalDateTime hasta = LocalDateTime.of(2026, 10, 30, 23, 59);
+
+        // Strategy: cada metrica se inyecta; agregar una nueva no obliga a tocar el servicio.
+        ServicioAnalitica servicio = new ServicioAnalitica(repo,
+                List.of(new PlatosTop(), new PedidosPorHora(), new TicketPromedio(),
+                        new TiempoPreparacion(), new PagosRechazados(repo, desde, hasta)));
+
+        servicio.cargar();
 
         System.out.println("=== Estadisticas del 19 al 30 de octubre ===");
         Map<String, Object> resumen = servicio.resumen(desde, hasta);
