@@ -1,12 +1,15 @@
 package com.campuseats.lector;
 
 import com.campuseats.modelo.Plato;
+
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
 import java.util.ArrayList;
+import java.util.List;
 
+/** Adapter: traduce menu_admin.csv (separado por coma) a objetos Plato. */
 public class MenuCsvAdapter extends FuenteDatos<Plato> {
+
     public MenuCsvAdapter(Path ruta) {
         super(ruta);
     }
@@ -17,15 +20,10 @@ public class MenuCsvAdapter extends FuenteDatos<Plato> {
         try {
             List<String> lineas = Files.readAllLines(ruta);
             for (int i = 1; i < lineas.size(); i++) {
-                String[] columnas = lineas.get(i).split(",");
-                if (columnas.length >= 5) {
-                    menu.add(new Plato(
-                            columnas[0].trim(),
-                            columnas[1].trim(),
-                            columnas[2].trim(),
-                            Double.parseDouble(columnas[3].trim()),
-                            columnas[4].trim()
-                    ));
+                String[] c = lineas.get(i).split(",");
+                if (c.length >= 5) {
+                    menu.add(new Plato(c[0].trim(), c[1].trim(), c[2].trim(),
+                            Double.parseDouble(c[3].trim()), c[4].trim()));
                 }
             }
         } catch (Exception e) {

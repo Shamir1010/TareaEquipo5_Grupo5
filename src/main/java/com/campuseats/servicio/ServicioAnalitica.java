@@ -1,19 +1,23 @@
 package com.campuseats.servicio;
 
+import com.campuseats.filtro.*;
 import com.campuseats.lector.FabricaFuentes;
-import com.campuseats.lector.FuenteDatos;
 import com.campuseats.metrica.Metrica;
 import com.campuseats.modelo.LineaPedido;
 import com.campuseats.modelo.Pago;
+import com.campuseats.modelo.Plato;
 import com.campuseats.repositorio.RepositorioAnalitica;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.nio.file.Path;
 import java.time.LocalDateTime;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
+/** Facade: unica puerta de entrada. cargar() lee, limpia y guarda; resumen() calcula las metricas. */
 public class ServicioAnalitica {
+
+    private static final Path CONFIG = Path.of("config/fuentes.json");
 
     private final RepositorioAnalitica repositorio;
     private final List<Metrica> metricas;
@@ -25,34 +29,57 @@ public class ServicioAnalitica {
         this.fabrica = new FabricaFuentes();
     }
 
-    //Lee las fuentes mediante la fábrica y adaptadores, aplica la carga inicial y guarda los datos en el repositorio.
     @SuppressWarnings("unchecked")
     public void cargar() {
         System.out.println("Iniciando carga de datos a traves de ServicioAnalitica...");
 
-        // 1. Instanciar los lectores mediante la fabrica de fuentes
-        FuenteDatos<LineaPedido> lectorPedidos = (FuenteDatos<LineaPedido>) fabrica.crear("app_json", Path.of("datos/pedidos_app.json"));
-        FuenteDatos<Pago> lectorPagos = (FuenteDatos<Pago>) fabrica.crear("pasarela_csv", Path.of("datos/pagos_pasarela.csv"));
+        List<LineaPedido> lineas = new ArrayList<>();
+        List<Pago> pagos = new ArrayList<>();
+        List<Plato> menu = new ArrayList<>();
 
-        List<LineaPedido> lineas = lectorPedidos.leer();
-        List<Pago> pagos = lectorPagos.leer();
+        try {
+            // 1. Factory: el tipo de cada fuente sale de config/fuentes.json
+            JsonNode fuentes = new ObjectMapper().readTree(CONFIG.toFile()).get("fuentes");
+            for (JsonNode f : fuentes) {
+                String tipo = f.get("tipo").asText();
+                List<?> datos = fabrica.crear(tipo, Path.of(f.get("ruta").asText())).leer();
+                switch (tipo) {
+                    case "app_json" -> lineas.addAll((List<LineaPedido>) datos);
+                    case "pasarela_csv" -> pagos.addAll((List<Pago>) datos);
+                    case "menu_csv" -> menu.addAll((List<Plato>) datos);
+                    default -> System.err.println("Tipo sin uso en el servicio: " + tipo);
+                }
+            }
+        } catch (Exception e) {
+            throw new IllegalStateException("No se pudo leer " + CONFIG + ": " + e.getMessage(), e);
+        }
 
-        // 2. Persistir en el repositorio
-        repositorio.guardarLineas(lineas);
+        // 2. Pipeline: primero se limpia, despues se completa la informacion
+        Pipeline pipeline = new Pipeline()
+                .agregar(new FiltroDuplicados())
+                .agregar(new FiltroCantidadValida())
+                .agregar(new FiltroSoloPagados())
+                .agregar(new FiltroPagoAprobado(pagos))
+                .agregar(new FiltroNombrePlato(menu));
+        List<LineaPedido> limpias = pipeline.ejecutar(lineas);
+
+        System.out.println("Lineas leidas (sin limpiar): " + lineas.size());
+        System.out.println("--- Limpieza de los datos ---");
+        pipeline.descartes().forEach((regla, n) -> System.out.printf("  %-62s %d lineas descartadas%n", regla, n));
+        long pedidos = limpias.stream().map(LineaPedido::numeroPedido).distinct().count();
+        System.out.println("  Quedan al final: " + limpias.size() + " lineas de " + pedidos + " pedidos");
+
+        // 3. Repository
+        repositorio.guardarLineas(limpias);
         repositorio.guardarPagos(pagos);
-
-        System.out.println("Carga finalizada: " + lineas.size() + " lineas y " + pagos.size() + " pagos guardados en repositorio.\n");
+        System.out.println("Carga finalizada: " + limpias.size() + " lineas y " + pagos.size() + " pagos guardados en repositorio.\n");
     }
 
-    //Consulta las lineas del repositorio en el rango dado y calcula las metricas configuradas.
     public Map<String, Object> resumen(LocalDateTime desde, LocalDateTime hasta) {
-        List<LineaPedido> lineasFiltradas = repositorio.lineasEntre(desde, hasta);
+        List<LineaPedido> filtradas = repositorio.lineasEntre(desde, hasta);
         Map<String, Object> resultados = new LinkedHashMap<>();
-
         if (metricas != null) {
-            for (Metrica m : metricas) {
-                resultados.put(m.nombre(), m.calcular(lineasFiltradas));
-            }
+            for (Metrica m : metricas) resultados.put(m.nombre(), m.calcular(filtradas));
         }
         return resultados;
     }

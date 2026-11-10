@@ -1,14 +1,17 @@
 package com.campuseats.lector;
+
 import com.campuseats.modelo.LineaPedido;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.nio.file.Path;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.List;
 import java.util.ArrayList;
+import java.util.List;
 
+/** Adapter: traduce pedidos_app.json (un objeto por pedido) a lineas del modelo. */
 public class AppPedidosJsonAdapter extends FuenteDatos<LineaPedido> {
+
     public AppPedidosJsonAdapter(Path ruta) {
         super(ruta);
     }
@@ -16,22 +19,27 @@ public class AppPedidosJsonAdapter extends FuenteDatos<LineaPedido> {
     @Override
     public List<LineaPedido> leer() {
         List<LineaPedido> lineas = new ArrayList<>();
-        ObjectMapper mapper = new ObjectMapper();
         try {
-            JsonNode root = mapper.readTree(ruta.toFile());
+            JsonNode root = new ObjectMapper().readTree(ruta.toFile());
             for (JsonNode pedido : root) {
-                String numeroPedido = pedido.get("numero_pedido").asText();
+                String numero = pedido.get("numeroPedido").asText();
                 double total = pedido.get("total").asDouble();
-                JsonNode historial = pedido.get("historial_estados");
-                JsonNode ultimoEstado = historial.get(historial.size() - 1);
-                String estadoStr = ultimoEstado.get("estado").asText();
-                LocalDateTime fechaHora = LocalDateTime.parse(ultimoEstado.get("fecha_hora").asText(), DateTimeFormatter.ISO_DATE_TIME);
+                String estado = pedido.get("estado").asText();
+                LocalDateTime registrado = LocalDateTime.parse(pedido.get("registradoEn").asText());
 
-                JsonNode platos = pedido.get("platos");
-                for (JsonNode plato : platos) {
-                    String platoId = plato.get("id_plato").asText();
-                    int cantidad = plato.get("cantidad").asInt();
-                    lineas.add(new LineaPedido(numeroPedido, platoId, cantidad, total, estadoStr, fechaHora));
+                LocalDateTime pago = null;
+                LocalDateTime listo = null;
+                for (JsonNode h : pedido.get("historialEstados")) {
+                    String e = h.get("estado").asText();
+                    LocalDateTime f = LocalDateTime.parse(h.get("fechaHora").asText());
+                    if (e.equals("PAGADO") && pago == null) pago = f;
+                    if (e.equals("LISTO_RETIRO") && listo == null) listo = f;
+                }
+
+                for (JsonNode l : pedido.get("lineas")) {
+                    lineas.add(new LineaPedido(numero, l.get("platoId").asText(), null,
+                            l.get("cantidad").asInt(), l.get("precioUnitario").asDouble(),
+                            total, estado, registrado, pago, listo));
                 }
             }
         } catch (Exception e) {
